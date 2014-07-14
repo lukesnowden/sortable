@@ -5,7 +5,7 @@ to use in harmony with lukesnowden/menu
 initiate the plugin:
 
 ```javascript
-$('.selector').pmMenuSortable();
+$('.selector').sortable();
 ```
 
 get the data
