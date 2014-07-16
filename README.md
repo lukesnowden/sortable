@@ -1,15 +1,17 @@
 #Sortable
 
+more information http://luke.sno.wden.co.uk/sortable-menu-ui
+
 to use in harmony with lukesnowden/menu
 
 initiate the plugin:
 
 ```javascript
-$('.selector').sortable();
+var sortable = $('.selector').sortableMenu();
 ```
 
 get the data
 
 ```javascript
-$('.selector').trigger( 'serialize' );
+sortable.data( 'serialize' );
 ```
