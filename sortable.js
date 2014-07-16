@@ -1,271 +1,329 @@
-(function ($) {
-	$.extend($.fn,
+/*!
+* 	jQuery Sortable Menu
+* 	https://github.com/lukesnowden/sortable
+* 	Copyright 2014 Luke Snowden
+* 	Released under the MIT license:
+* 	http://www.opensource.org/licenses/mit-license.php
+*/
+
+( function ( $ ) {
+	$.fn.sortableMenu = function (opts)
 	{
-		sortable : function (opts)
-		{
-			var opts = $.extend(
-			{
-				dev : false
-			}, opts);
+		var opts = $.extend({
+			formSelector 	: 'form:eq(0)'
+		}, opts),
 
-			var init = function (elm, i)
-			{
-				$sortable = $(elm);
+		app = {
 
-				$sortable.bind( 'serialize', function()
-				{
-					$( '> li', $(this) ).each( function()
-					{
-						var 	that = $(this),
-							code = $('form:eq(0)'),
-							m = that[0].pmmenu,
-							ref = that.attr( 'data-reference' ),
-							$text = $('<input type="hidden" name="' + ref + '[text]" />'),
-							$title = $('<input type="hidden" name="' + ref + '[title]" />'),
-							$class = $('<input type="hidden" name="' + ref + '[class]" />'),
-							$parent = $('<input type="hidden" name="' + ref + '[parent]" />');
+			menu : null,
 
-						$text.val( $( '[name="label"]', that ).val() );
-						$title.val( $( '[name="title"]', that ).val() );
-						$class.val( $( '[name="class"]', that ).val() );
+			tabWidth : 40,
 
-						$( that.prevAll('li').get().reverse()).each( function()
-						{
-							if( ( $(this)[0].pmmenu.tabs+1 ) === m.tabs )
-							{
-								$parent.val( $(this).attr( 'data-reference' ) );
-								return;
-							}
-						});
+			sortParents : function() {
+				$('li:not(.ui-sortable-helper):not(.ghost)', app.menu ).each( function(i){
+					var item = $(this);
+					var parent_id = null;
+					item.prevAll('li:not(.ui-sortable-helper):not(.ghost)').each( function(){
+						if( parent_id === null && $(this).data('menuData').tabbed == (item.data('menuData').tabbed-1) ) {
+							parent_id = $(this).data('menuData').id;
+						}
+					});
+					parent_id = ( parent_id === null ? 0 : parent_id );
+					item.data('menuData').parent = parent_id;
+				});
+			},
 
-						$text.appendTo( code );
-						$title.appendTo( code );
-						$class.appendTo( code );
-						$parent.appendTo( code );
+			serializeData : function() {
+				var items = [];
+				$('li:not(.ui-sortable-helper):not(.ghost)', app.menu ).each( function(i){
+					if( typeof $(this).data( 'menuData' ) !== 'undefined' ) {
+						items.push( { 'id' : $(this).data( 'menuData' ).id, 'parent_id' : $(this).data( 'menuData' ).parent, 'order' : i } );
+					}
+				});
+				return JSON.stringify( items );
+			},
 
+			/**
+			 * [getPaceholderIndex description]
+			 * @param  {[type]} ui [description]
+			 * @return {[type]}    [description]
+			 */
+
+			getPaceholderIndex : function() {
+				var clone = app.menu.clone();
+				$('.ui-sortable-helper', clone).remove();
+				return $('.ghost', clone).index();
+			},
+
+			/**
+			 * [hasChildren description]
+			 * @param  {[type]}  item [description]
+			 * @return {Boolean}      [description]
+			 */
+
+			hasChildren : function( item ) {
+				var sibling = item.nextAll(':not(.ui-sortable-helper):not(.ghost)');
+				if( sibling.length !== 0 && sibling.data( 'menuData' ).tabbed > item.data( 'menuData' ).tabbed  ) {
+					return true;
+				}
+				return false;
+			},
+
+			/**
+			 * [isCarryingChildren description]
+			 * @param  {[type]}  item [description]
+			 * @return {Boolean}      [description]
+			 */
+
+			isCarryingChildren : function( item ) {
+				if( typeof item.data('menuData').children !== 'undefined' && item.data('menuData').children ) {
+					return true;
+				}
+				return false;
+			},
+
+			/**
+			 * [attachChildren description]
+			 * @param  {[type]} ui [description]
+			 * @return {[type]}    [description]
+			 */
+
+			attachChildren : function( ui ) {
+				var items = [];
+				var children = ui.item.nextAll(':not(.ui-sortable-helper):not(.ghost)');
+				children.each( function(){
+					var child = $(this);
+					if( child.data( 'menuData' ).tabbed > ui.item.data( 'menuData' ).tabbed ) {
+						var clone = child.clone();
+						// Doesn't seem to clone the data...
+						clone.data( 'menuData', child.data( 'menuData' ) );
+						items.push( clone );
+						child.remove();
+					}
+				});
+				ui.item.data( 'menuData' ).children = items;
+				app.menu.sortable('refresh');
+			},
+
+			/**
+			 * [releaseChildren description]
+			 * @param  {[type]} item [description]
+			 * @return {[type]}      [description]
+			 */
+
+			releaseChildren : function( item ) {
+				var itemData = item.data( 'menuData' );
+				var difference = Math.abs( itemData.prevTabbed - itemData.tabbed );
+				for( var i in itemData.children.reverse() ) {
+					var child = itemData.children[i];
+					var childData = child.data('menuData');
+					if( itemData.tabbed < itemData.prevTabbed ) {
+						child.data('menuData').tabbed = childData.prevTabbed - difference;
+					} else if( itemData.tabbed > itemData.prevTabbed ) {
+						child.data('menuData').tabbed = childData.prevTabbed + difference;
+					}
+					childData.prevTabbed = childData.tabbed;
+					child.css({
+						left : ( childData.tabbed * app.tabWidth ) + 'px'
+					});
+					child.insertAfter(item);
+				}
+				item.data( 'menuData' ).children = false;
+				app.menu.sortable('refresh');
+			},
+
+			/**
+			 * [getClostestParent description]
+			 * @param  {[type]} placeholder [description]
+			 * @return {[type]}             [description]
+			 */
+
+			getClostestParent : function( placeholder ) {
+				var clone = app.menu;
+				var ghost = $('.ghost', clone);
+				return ( typeof ghost.prevAll(':not(.ui-sortable-helper)')[0] !== 'undefined' ? $(ghost.prevAll(':not(.ui-sortable-helper)')[0]) : null );
+			},
+
+			/**
+			 * [updatePositions description]
+			 * @param  {[type]} e  [description]
+			 * @param  {[type]} ui [description]
+			 * @return {[type]}    [description]
+			 */
+
+			updatePositions : function( e, ui ) {
+				$('> li:not(.ui-sortable-helper):not(.ghost)', app.menu).each( function(i){
+					$(this).data( 'menuData' ).position = i;
+				});
+			},
+
+			/**
+			 * [updateDisplay description]
+			 * @param  {[type]} e  [description]
+			 * @param  {[type]} ui [description]
+			 * @return {[type]}    [description]
+			 */
+
+			updateDisplay : function( e, ui ) {
+				var closestParent = app.getClostestParent( ui.item );
+				if( closestParent === null || ui.placeholder.data( 'menuData' ).tabbed < 0 || ui.placeholder.data( 'menuData' ).position === 0 ) {
+					ui.placeholder.data( 'menuData' ).tabbed = 0;
+				}
+				if( closestParent ) {
+					if( ui.placeholder.data( 'menuData' ).tabbed >= (closestParent.data( 'menuData' ).tabbed+1) ) {
+						ui.placeholder.data( 'menuData' ).tabbed = (closestParent.data( 'menuData' ).tabbed+1);
+					}
+					ui.placeholder.data( 'menuData' ).parent = closestParent.data( 'menuData' ).id;
+				}
+				ui.placeholder.css({
+					left : ( ui.placeholder.data( 'menuData' ).tabbed * app.tabWidth ) + 'px'
+				});
+			},
+
+			/**
+			 * [tabChanged description]
+			 * @param  {[type]} e  [description]
+			 * @param  {[type]} ui [description]
+			 * @return {[type]}    [description]
+			 */
+
+			tabChanged : function( e, ui ) {
+				app.updateDisplay( e, ui );
+			},
+
+			/**
+			 * [leftPosition description]
+			 * @return {[type]} [description]
+			 */
+
+			leftPosition : function(){
+				var offset = app.menu.offset();
+				return offset.left;
+			},
+
+			/**
+			 * [start description]
+			 * @param  {[type]} e  [description]
+			 * @param  {[type]} ui [description]
+			 * @return {[type]}    [description]
+			 */
+
+			start : function( e, ui ) {
+				if( e.toElement.nodeName.toLowerCase() !== 'span' ) {
+					// @todo
+				}
+				app.updatePositions( e, ui );
+				var clone = $('> span', ui.item).clone();
+				clone.appendTo( ui.placeholder );
+				ui.placeholder.data( 'menuData', ui.item.data( 'menuData' ) );
+				if( app.hasChildren( ui.item ) ) {
+					app.attachChildren( ui );
+				}
+				app.updateDisplay( e, ui );
+			},
+
+			/**
+			 * [changed description]
+			 * @param  {[type]} e  [description]
+			 * @param  {[type]} ui [description]
+			 * @return {[type]}    [description]
+			 */
+
+			changed : function( e, ui ) {
+				ui.placeholder.data( 'menuData' ).position = app.getPaceholderIndex();
+				app.updatePositions( e, ui );
+				app.updateDisplay( e, ui );
+			},
+
+			/**
+			 * [sort description]
+			 * @param  {[type]} e  [description]
+			 * @param  {[type]} ui [description]
+			 * @return {[type]}    [description]
+			 */
+
+			sort : function( e, ui ) {
+				var tabbed = Math.floor( ( ui.position.left - app.leftPosition() ) / app.tabWidth );
+				if( tabbed !== ui.placeholder.data( 'menuData' ).tabbed ) {
+					ui.placeholder.data( 'menuData' ).tabbed = tabbed;
+					app.tabChanged( e, ui );
+				}
+			},
+
+			/**
+			 * [stop description]
+			 * @param  {[type]} e  [description]
+			 * @param  {[type]} ui [description]
+			 * @return {[type]}    [description]
+			 */
+
+			stop : function( e, ui ) {
+				ui.item.data( 'menuData', ui.placeholder.data( 'menuData' ) );
+				app.updatePositions( e, ui );
+				if( ui.item.data( 'menuData' ).tabbed < 0 ) {
+					ui.item.data( 'menuData' ).tabbed = 0;
+				}
+				if( app.isCarryingChildren( ui.item ) ) {
+					app.releaseChildren( ui.item );
+				}
+				ui.item.data( 'menuData' ).prevTabbed =  ui.item.data( 'menuData' ).tabbed;
+				ui.item.css({
+					left : ( ui.item.data( 'menuData' ).tabbed * app.tabWidth ) + 'px'
+				});
+				app.sortParents();
+				app.menu.data('serialize', app.serializeData() );
+			},
+
+			/**
+			 * [positionItems description]
+			 * @return {[type]} [description]
+			 */
+
+			positionItems : function() {
+				$('> li', app.menu).each( function(i){
+					var item = $(this);
+					var parameters = JSON.parse( $(this).attr('data-parameters') );
+					item.data( 'menuData', {
+						id 			: parseInt( parameters[0] ),
+						parent 		: parseInt( parameters[1] ),
+						prevTabbed  : parseInt( parameters[2] ),
+						tabbed 		: parseInt( parameters[2] ),
+						position 	: i
+					});
+					item.css({
+						left : ( item.data( 'menuData' ).tabbed * app.tabWidth ) + 'px'
 					});
 				});
+			},
 
-				$sortable.mousedown( function (e)
-				{
-					var $target = e.target;
-					if ( $target.tagName.toLowerCase() === 'input' )
-					{
-						$( $target ).parents( 'li:eq(0)' ).addClass( 'disabled' );
-						$target.focus();
-					}
-					else if ( $($target).hasClass( 'expander' ) )
-					{
-						// Prevent dragging on options expand trigger
-						$( $target ).parents('li:eq(0)').addClass('disabled');
-					}
-					else
-					{
-						$('.disabled input', $sortable).each(function ()
-						{
-							$(this).blur();
-							$(this).parents('li:eq(0)').removeClass('disabled');
-						});
-					}
-					return false;
+			/**
+			 * [init description]
+			 * @param  {[type]} elm   [description]
+			 * @param  {[type]} index [description]
+			 * @return {[type]}       [description]
+			 */
+
+			init : function( elm, index ) {
+				app.menu = $(elm).sortable({
+					items 		: '> li',
+					placeholder : 'ghost',
+					cancel  	: '.disabled',
+					appendTo 	: document.body,
+					start		: app.start,
+					sort 		: app.sort,
+					stop 		: app.stop,
+					change 		: app.changed
 				});
-
-				$('.expander', $sortable).click(function ()
-				{
-					if ($('.options:visible', $sortable).get(0) !== $(this).parent().next().get(0))
-					{
-						$('.options:visible', $sortable).slideToggle(200);
-						$(this).parent().next().slideToggle(200);
-					}
-					else
-					{
-						$(this).parent().next().slideUp(200);
-					}
-					return false;
-				});
-
-				$( '.options', $sortable ).slideUp(0);
-
-				sortIt($sortable);
-
-				if( opts.dev === true )
-				{
-					setInterval( function()
-					{
-						$( '> li', sortable ).each( function()
-						{
-							var $tmp = $( '<div class="dev"></div>' );
-							$( '<p><strong>Tabs</strong> ' + $(this)[0].pmmenu.tabs + '</p>' ).appendTo( $tmp );
-							$( '<p><strong>Tab Limit</strong> ' + $(this)[0].pmmenu.tabLimit + '</p>' ).appendTo( $tmp );
-							$( ".dev", $(this) ).remove();
-							$tmp.appendTo( $(this) );
-						});
-					}, 500 );
-				}
+				app.positionItems();
+				app.menu.data('serialize', app.serializeData() )
 			}
-
-			var sortIt = function ( $sortable$ )
-			{
-				sortable.sortable(
-				{
-					items: '> li',
-
-					placeholder: "ghost",
-
-					cancel : '.disabled',
-
-					appendTo: document.body,
-
-					create : function( e, ui )
-					{
-						var items = $( 'li[class!="ghost"]', $(this) );
-
-						items.each( function( i )
-						{
-							var tabLimit = i == 0 ? 0 : 1;
-
-							$(this)[0].pmmenu = {
-								tabs : 0,
-								tabsLast : 0,
-								tabWidth : 40,
-								continue : true,
-								tabLimit : tabLimit
-							};
-
-						});
-					},
-
-					start : function( e, ui )
-					{
-						// Carry relevent children with the item on move...
-						var tmp = $('<ul class="tmp"></ul>');
-						ui.item.nextAll('li[class!="ghost"]').each(function()
-						{
-							var item = $(this);
-							if( item[0].pmmenu.tabs > ui.item[0].pmmenu.tabs )
-							{
-								$(this).appendTo(tmp);
-							}
-						});
-						if( $( '> li', tmp ).length !== 0 )
-						{
-							tmp.appendTo( $('body') );
-							sortable.sortable( "refresh" );
-						}
-
-						ui.placeholder.height(ui.item.height());
-						ui.item[0].pmmenu.tabsLast = ui.item[0].pmmenu.tabs;
-						ui.placeholder.css( 'left', ( ui.item[0].pmmenu.tabs * ui.item[0].pmmenu.tabWidth ) + 'px' );
-					},
-
-					sort : function( e, ui )
-					{
-
-						var beforePlaceholder = ui.placeholder.prevAll('li[class!="ui-sortable-helper"]:eq(0)');
-
-						if( beforePlaceholder.length !== 0 )
-						{
-							var maxTabs = ( beforePlaceholder[0].pmmenu.tabs + 1 ),
-								discount = ( ( ui.item[0].pmmenu.tabs + 1 ) * ui.item[0].pmmenu.tabWidth ),
-								noDiscount = ( ( ui.item[0].pmmenu.tabs - 1 ) * ui.item[0].pmmenu.tabWidth );
-
-							if( ui.item[0].pmmenu.tabs < maxTabs )
-							{
-								if( ui.position.left > discount && ui.item[0].pmmenu.continue === true )
-								// If moving to the right...
-								{
-									ui.item[0].pmmenu.continue = false;
-									ui.placeholder.stop(true, true).animate({
-										left : '+=' + ui.item[0].pmmenu.tabWidth
-									}, 0, function()
-									{
-										ui.item[0].pmmenu.tabs++;
-										ui.placeholder.css( 'left', discount + 'px' );
-										ui.item[0].pmmenu.continue = true;
-
-									});
-								}
-								else if( noDiscount >= 0 && ui.position.left < noDiscount && ui.item[0].pmmenu.continue === true  )
-								// If moving back to the left...
-								{
-									ui.item[0].pmmenu.continue = false;
-									ui.placeholder.stop(true, true).animate({
-										left : '-=' + ui.item[0].pmmenu.tabWidth
-									}, 0, function()
-									{
-										ui.item[0].pmmenu.tabs--;
-										ui.placeholder.css( 'left', noDiscount + 'px' );
-										ui.item[0].pmmenu.continue = true;
-
-									});
-								}
-							}
-							else
-							{
-								if( noDiscount >= 0 && ui.position.left < noDiscount && ui.item[0].pmmenu.continue === true  )
-								// If moving back to the left...
-								{
-									ui.item[0].pmmenu.continue = false;
-									ui.placeholder.stop(true, true).animate({
-										left : '-=' + ui.item[0].pmmenu.tabWidth
-									}, 0, function()
-									{
-										ui.item[0].pmmenu.tabs--;
-										ui.placeholder.css( 'left', noDiscount + 'px' );
-										ui.item[0].pmmenu.continue = true;
-
-									});
-								}
-								else
-								{
-									ui.item[0].pmmenu.tabs = maxTabs;
-									ui.placeholder.css( 'left', ( maxTabs * ui.item[0].pmmenu.tabWidth ) + 'px' );
-								}
-							}
-						}
-						else
-						{
-							ui.item[0].pmmenu.tabs = 0
-							ui.placeholder.css( 'left', '0px' );
-						}
-					},
-
-					stop : function( e, ui )
-					{
-
-						ui.item.css( 'left', ( ui.item[0].pmmenu.tabs * ui.item[0].pmmenu.tabWidth ) + 'px' );
-						var tmp = $('<div></div>');
-						if( $('> .tmp', $('body') ).length !== 0 )
-						{
-							$( '> .tmp', $('body') ).appendTo(tmp);
-							$( $('> .tmp > li', tmp ).get().reverse() ).each( function()
-							{
-								var diff = Math.abs( ui.item[0].pmmenu.tabs - ui.item[0].pmmenu.tabsLast );
-								if( ui.item[0].pmmenu.tabs > ui.item[0].pmmenu.tabsLast )
-								{
-									$(this)[0].pmmenu.tabs += diff;
-								}
-								else
-								{
-									$(this)[0].pmmenu.tabs -= diff;
-								}
-								$(this)[0].pmmenu.tabsLimit = $(this)[0].pmmenu.tabs;
-								$(this).insertAfter(ui.item);
-								$(this).css( 'left', ( $(this)[0].pmmenu.tabs * $(this)[0].pmmenu.tabWidth ) + 'px' );
-							});
-							sortable.sortable( "refresh" );
-						}
-					}
-
-				});
-			}
-
-			$(this).each(function (i)
-			{
-				init(this, i);
-			});
-
-			return $(this);
 		}
-	});
-})(jQuery);
+
+		return $(this).each( function ( i )
+		{
+			app.init( this, i );
+		});
+
+	}
+})( jQuery );
+
