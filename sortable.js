@@ -209,7 +209,7 @@
 			 */
 
 			start : function( e, ui ) {
-				if( e.toElement.nodeName.toLowerCase() !== 'span' ) {
+				if( e.target.nodeName.toLowerCase() !== 'span' ) {
 					// @todo
 				}
 				app.updatePositions( e, ui );
